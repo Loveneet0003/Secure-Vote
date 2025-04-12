@@ -2,8 +2,9 @@ services:
   - type: web
     name: secure-vote-api
     env: node
-    buildCommand: cd server && npm install
-    startCommand: cd server && npm start
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
     envVars:
       - key: PORT
         value: 3001
