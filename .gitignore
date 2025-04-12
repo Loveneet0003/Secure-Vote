@@ -27,3 +27,6 @@ dist-ssr
 .env
 .env.*
 !.env.example
+PORT=3001
+MONGODB_URI=mongodb+srv://loveneetchauhan51:G0VSZGxWyPK6xihC@cluster0.rmuctrf.mongodb.net/secure-vote?retryWrites=true&w=majority
+VITE_RENDER_API_URL=https://secure-vote-azvv.onrender.com
