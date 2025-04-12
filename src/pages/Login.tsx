@@ -16,8 +16,8 @@ const Login = () => {
   const { login, isLoggedIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [adminEmail, setAdminEmail] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
+  const [adminEmail, setAdminEmail] = useState('admin123');
+  const [adminPassword, setAdminPassword] = useState('admin@123');
   const [isLoading, setIsLoading] = useState(false);
   const [adminIsLoading, setAdminIsLoading] = useState(false);
 
@@ -142,11 +142,11 @@ const Login = () => {
               <h2 className="text-2xl font-bold mb-6 text-center">Admin Login</h2>
               <form className="space-y-4" onSubmit={handleAdminSubmit}>
                 <div className="space-y-2">
-                  <Label htmlFor="admin-email">Email</Label>
+                  <Label htmlFor="admin-email">Username</Label>
                   <Input 
                     id="admin-email" 
-                    type="email"
-                    placeholder="Enter your admin email" 
+                    type="text"
+                    placeholder="Enter your admin username" 
                     className="glass"
                     value={adminEmail}
                     onChange={(e) => setAdminEmail(e.target.value)}
