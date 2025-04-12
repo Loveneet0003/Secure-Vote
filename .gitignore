@@ -1,3 +1,29 @@
-PORT=3001
-MONGODB_URI=mongodb+srv://loveneetchauhan51:G0VSZGxWyPK6xihC@cluster0.rmuctrf.mongodb.net/secure-vote?retryWrites=true&w=majority
-VITE_RENDER_API_URL=https://your-render-app-name.onrender.com/api 
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables
+.env
+.env.*
+!.env.example
