@@ -1,0 +1,122 @@
+
+@layer components {
+  .nav-link {
+    @apply px-4 py-2 font-medium text-white hover:text-gray-300 transition-colors relative overflow-hidden;
+  }
+  
+  .nav-link::after {
+    @apply content-[''] absolute bottom-0 left-0 w-full h-0.5 bg-voting-blue scale-x-0 transition-transform duration-300 origin-bottom-right;
+  }
+  
+  .nav-link:hover::after {
+    @apply scale-x-100 origin-bottom-left;
+  }
+  
+  .btn-vote {
+    @apply px-6 py-2 bg-voting-blue text-white font-medium rounded-md hover:bg-voting-blue-dark transition-all duration-300 relative overflow-hidden;
+  }
+  
+  .btn-vote::before {
+    @apply content-[''] absolute inset-0 opacity-0 transition-opacity duration-300 bg-white/10;
+  }
+  
+  .btn-vote:hover::before {
+    @apply opacity-100;
+  }
+  
+  .university-card {
+    @apply bg-white/20 backdrop-blur-md p-6 rounded-lg border border-white/20 shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col items-center justify-between gap-4;
+  }
+  
+  .glass-card {
+    @apply backdrop-blur-md border rounded-xl shadow-lg;
+  }
+  
+  .dark .glass-card {
+    @apply bg-black/30 border-white/10;
+  }
+  
+  .light .glass-card {
+    @apply bg-white/50 border-white/40;
+  }
+  
+  .form-input {
+    @apply w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-voting-blue;
+  }
+  
+  .form-label {
+    @apply block mb-2 text-sm font-medium;
+  }
+  
+  .light .form-label {
+    @apply text-gray-700;
+  }
+  
+  .dark .form-label {
+    @apply text-gray-200;
+  }
+  
+  .gradient-text {
+    @apply bg-gradient-to-r from-voting-blue to-voting-teal bg-clip-text text-transparent;
+  }
+  
+  .ripple-effect {
+    @apply relative overflow-hidden;
+  }
+  
+  .ripple-effect::after {
+    @apply content-[''] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full opacity-0;
+  }
+  
+  .ripple-effect:active::after {
+    @apply animate-ripple;
+  }
+  
+  .hover-glow {
+    @apply transition-shadow duration-300;
+  }
+  
+  .dark .hover-glow {
+    @apply hover:shadow-[0_0_15px_rgba(14,165,233,0.5)];
+  }
+  
+  .light .hover-glow {
+    @apply hover:shadow-[0_0_15px_rgba(14,165,233,0.3)];
+  }
+  
+  .pulse-animation {
+    @apply animate-pulse-glow;
+  }
+  
+  .float-animation {
+    @apply animate-float;
+  }
+  
+  .theme-transition {
+    @apply transition-all duration-300 ease-in-out;
+  }
+  
+  .eth-tx-hash {
+    @apply font-mono text-xs break-all p-2 rounded;
+  }
+  
+  .dark .eth-tx-hash {
+    @apply text-voting-blue-light bg-black/30;
+  }
+  
+  .light .eth-tx-hash {
+    @apply text-voting-blue-dark bg-gray-100;
+  }
+  
+  .blockchain-node {
+    @apply absolute rounded-full shadow-lg animate-pulse;
+  }
+  
+  .dark .blockchain-node {
+    @apply bg-voting-blue-light;
+  }
+  
+  .light .blockchain-node {
+    @apply bg-voting-blue;
+  }
+}
