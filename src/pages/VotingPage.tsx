@@ -6,44 +6,15 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import Layout from '@/components/Layout';
 import { toast } from '@/components/ui/use-toast';
-import { CheckCircle, User, AlertCircle, Loader, ShieldAlert } from 'lucide-react';
+import { CheckCircle, User, AlertCircle, Loader, ShieldAlert, GraduationCap } from 'lucide-react';
 import { hasDeviceVoted, recordVote } from '@/services/ethereumService';
-
-const candidatesByUniversity = {
-  uod: [{
-    id: '1',
-    name: 'Rajiv Kumar',
-    party: 'Student Union',
-    position: 'President'
-  }, {
-    id: '2',
-    name: 'Priya Singh',
-    party: 'Progressive Students',
-    position: 'President'
-  }, {
-    id: '3',
-    name: 'Amit Verma',
-    party: 'Independent',
-    position: 'President'
-  }],
-  nith: [{
-    id: '1',
-    name: 'Sneha Sharma',
-    party: 'Unity Alliance',
-    position: 'President'
-  }, {
-    id: '2',
-    name: 'Karthik Reddy',
-    party: 'Student Front',
-    position: 'President'
-  }]
-};
+import { electionService } from '@/services/electionService';
 
 const UniversityNames = {
   uod: 'University of Delhi',
   nith: 'National Institute Of Technology Hamirpur',
   bhu: 'Banaras Hindu University',
-  iit: 'Indian Institute of Technology',
+  iitd: 'Indian Institute of Technology Delhi',
   iis: 'Indian Institute of Science',
   uoh: 'University of Hyderabad',
   ju: 'Jadavpur University',
@@ -52,29 +23,64 @@ const UniversityNames = {
 };
 
 const VotingPage = () => {
-  const {
-    universityId
-  } = useParams<{
-    universityId: string;
-  }>();
+  const { universityId } = useParams<{ universityId: string }>();
   const navigate = useNavigate();
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
   const [alreadyVoted, setAlreadyVoted] = useState(false);
+  const [candidates, setCandidates] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   const universityName = universityId ? UniversityNames[universityId as keyof typeof UniversityNames] : 'Unknown University';
-  const candidates = universityId ? candidatesByUniversity[universityId as keyof typeof candidatesByUniversity] || [] : [];
 
   useEffect(() => {
-    if (universityId && hasDeviceVoted(universityId)) {
-      setAlreadyVoted(true);
-      toast({
-        title: "Already Voted",
-        description: "This device has already cast a vote in this election.",
-        variant: "destructive"
-      });
-    }
+    const fetchCandidates = async () => {
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        if (universityId && hasDeviceVoted(universityId)) {
+          setAlreadyVoted(true);
+          toast({
+            title: "Already Voted",
+            description: "This device has already cast a vote in this election.",
+            variant: "destructive"
+          });
+        }
+        
+        const universityFullName = universityId ? 
+          UniversityNames[universityId as keyof typeof UniversityNames] : 
+          '';
+        
+        if (!universityFullName) {
+          setError("Invalid university");
+          setIsLoading(false);
+          return;
+        }
+        
+        const universityCandidates = await electionService.getCandidatesByUniversity(universityFullName);
+        
+        setCandidates(universityCandidates.map(candidate => ({
+          id: candidate.id,
+          name: candidate.name,
+          party: candidate.position,
+          position: candidate.position,
+          bio: candidate.bio
+        })));
+        
+        console.log(`Fetched ${universityCandidates.length} candidates for ${universityFullName}`);
+      } catch (err) {
+        console.error("Error fetching candidates:", err);
+        setError("Failed to load candidates. Please try again later.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchCandidates();
   }, [universityId]);
 
   const handleVote = async () => {
@@ -151,52 +157,82 @@ const VotingPage = () => {
               
               <Button onClick={() => navigate("/")} className="bg-gradient-blockchain hover:bg-voting-teal hover-glow">Return to Home</Button>
             </CardContent>
-          </Card> : <Card className="glass-card">
+          </Card> : (
+          <Card className="glass-card">
             <CardHeader>
               <CardTitle>Select Your Preferred Candidate</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="mb-8">
-                <RadioGroup value={selectedCandidate || ''} onValueChange={setSelectedCandidate}>
-                  {candidates.map(candidate => <div key={candidate.id} className="flex items-center space-x-4 p-4 border border-white/10 rounded-md mb-4 hover:bg-white/5 transition-colors glass">
-                      <RadioGroupItem value={candidate.id} id={`candidate-${candidate.id}`} className="text-voting-blue" />
-                      <div className="flex-1">
-                        <div className="flex items-center">
-                          <User className="h-5 w-5 mr-2 text-voting-blue-light" />
-                          <Label htmlFor={`candidate-${candidate.id}`} className="text-lg font-medium">
-                            {candidate.name}
-                          </Label>
+              {isLoading ? (
+                <div className="text-center py-8">
+                  <Loader className="h-12 w-12 mx-auto text-voting-blue-light mb-4 animate-spin" />
+                  <p>Loading candidates...</p>
+                </div>
+              ) : error ? (
+                <div className="text-center py-8">
+                  <AlertCircle className="h-12 w-12 mx-auto text-red-500 mb-4" />
+                  <p>{error}</p>
+                </div>
+              ) : (
+                <div className="mb-8">
+                  <RadioGroup value={selectedCandidate || ''} onValueChange={setSelectedCandidate}>
+                    {candidates.map(candidate => (
+                      <div key={candidate.id} className="flex items-center space-x-4 p-4 border border-white/10 rounded-md mb-4 hover:bg-white/5 transition-colors glass">
+                        <RadioGroupItem value={candidate.id} id={`candidate-${candidate.id}`} className="text-voting-blue" />
+                        <div className="flex-1">
+                          <div className="flex items-center">
+                            <User className="h-5 w-5 mr-2 text-voting-blue-light" />
+                            <Label htmlFor={`candidate-${candidate.id}`} className="text-lg font-medium">
+                              {candidate.name}
+                            </Label>
+                          </div>
+                          <div className="flex items-center text-muted-foreground">
+                            <GraduationCap className="h-4 w-4 mr-1" />
+                            <p>{candidate.position}</p>
+                          </div>
                         </div>
-                        <p className="text-muted-foreground">{candidate.party}</p>
                       </div>
-                    </div>)}
-                </RadioGroup>
-              </div>
+                    ))}
+                  </RadioGroup>
+                </div>
+              )}
               
-              {candidates.length === 0 && <div className="text-center py-8">
+              {!isLoading && candidates.length === 0 && !error && (
+                <div className="text-center py-8">
                   <AlertCircle className="h-12 w-12 mx-auto text-voting-blue-light mb-4" />
-                  <p>No candidates available for this election.</p>
-                </div>}
+                  <p>No candidates available for this election yet.</p>
+                </div>
+              )}
               
               <div className="flex justify-end">
-                <Button onClick={handleVote} className="bg-gradient-blockchain hover:bg-voting-teal px-8 py-2 hover-glow ripple-effect" disabled={!selectedCandidate || isProcessing}>
-                  {isProcessing ? <span className="flex items-center">
+                <Button 
+                  onClick={handleVote} 
+                  className="bg-gradient-blockchain hover:bg-voting-teal px-8 py-2 hover-glow ripple-effect" 
+                  disabled={!selectedCandidate || isProcessing || isLoading || candidates.length === 0}
+                >
+                  {isProcessing ? (
+                    <span className="flex items-center">
                       <Loader className="animate-spin mr-2 h-4 w-4" />
                       Processing Vote...
-                    </span> : "Submit Vote"}
+                    </span>
+                  ) : "Submit Vote"}
                 </Button>
               </div>
               
-              {isProcessing && <div className="mt-6 p-4 glass rounded-lg text-center">
+              {isProcessing && (
+                <div className="mt-6 p-4 glass rounded-lg text-center">
                   <p className="text-sm mb-2">Recording your vote on the blockchain</p>
                   <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-blockchain animate-gradient-shift" style={{
-                width: '60%'
-              }}></div>
+                    <div 
+                      className="h-full bg-gradient-blockchain animate-gradient-shift" 
+                      style={{ width: '60%' }}
+                    ></div>
                   </div>
-                </div>}
+                </div>
+              )}
             </CardContent>
-          </Card>}
+          </Card>
+        )}
       </div>
     </Layout>;
 };

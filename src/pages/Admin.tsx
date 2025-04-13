@@ -81,6 +81,9 @@ const Admin = () => {
 
   // Additional state for vote data
   const [voteData, setVoteData] = useState<Record<string, number>>({});
+  
+  // Add state for selected university filter
+  const [selectedUniversity, setSelectedUniversity] = useState<string>('all');
 
   // Initial data loading
   useEffect(() => {
@@ -273,6 +276,47 @@ const Admin = () => {
     } catch (error) {
       console.error('Failed to cast vote:', error);
     }
+  };
+
+  // Get unique universities from candidates
+  const uniqueUniversities = React.useMemo(() => {
+    const universities = candidates.map(c => c.university);
+    return Array.from(new Set(universities));
+  }, [candidates]);
+
+  // Filter results data by selected university
+  const filteredResultsData = React.useMemo(() => {
+    if (selectedUniversity === 'all') {
+      return resultsData;
+    }
+    return resultsData.filter(result => result.university === selectedUniversity);
+  }, [resultsData, selectedUniversity]);
+
+  // Get university stats
+  const universityStats = React.useMemo(() => {
+    // Group candidates by university
+    const stats = uniqueUniversities.map(university => {
+      const universityCandidates = candidates.filter(c => c.university === university);
+      const totalVotes = universityCandidates.reduce(
+        (sum, c) => sum + (voteData[c.id] || 0), 
+        0
+      );
+      const candidateCount = universityCandidates.length;
+      
+      return {
+        university,
+        candidateCount,
+        totalVotes,
+        logo: getUniversityLogo(university)
+      };
+    });
+    
+    return stats;
+  }, [candidates, uniqueUniversities, voteData]);
+
+  // Handle university filter change
+  const handleUniversityFilterChange = (university: string) => {
+    setSelectedUniversity(university);
   };
 
   if (isLoading) {
@@ -513,7 +557,7 @@ const Admin = () => {
           </TabsContent>
           
           <TabsContent value="results">
-            <Card className="glass-card">
+            <Card className="glass-card mb-6">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>Election Results</CardTitle>
@@ -522,14 +566,93 @@ const Admin = () => {
                     ({voteStats.turnoutPercentage}% turnout)
                   </p>
                 </div>
-                <div>
+                <div className="flex gap-4 items-center">
+                  <div className="w-64">
+                    <Select 
+                      value={selectedUniversity} 
+                      onValueChange={handleUniversityFilterChange}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Filter by university" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Universities</SelectItem>
+                        {uniqueUniversities.map(university => (
+                          <SelectItem key={university} value={university}>
+                            <div className="flex items-center gap-2">
+                              {getUniversityLogo(university) && (
+                                <img 
+                                  src={getUniversityLogo(university)} 
+                                  alt={university}
+                                  className="w-5 h-5 object-contain"
+                                />
+                              )}
+                              {university}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <Button onClick={togglePolling} variant="outline">
                     {isPolling ? "Pause Updates" : "Resume Updates"}
                   </Button>
                 </div>
               </CardHeader>
+            </Card>
+            
+            {/* University Summary Cards */}
+            {selectedUniversity === 'all' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                {universityStats.map((stat) => (
+                  <Card key={stat.university} className="glass-card">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3">
+                        {stat.logo && (
+                          <div className="w-12 h-12 bg-white/10 rounded-full p-2 flex items-center justify-center">
+                            <img 
+                              src={stat.logo} 
+                              alt={stat.university} 
+                              className="w-8 h-8 object-contain"
+                            />
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <h3 className="font-medium text-sm">{stat.university}</h3>
+                          <div className="flex gap-4 mt-1">
+                            <div className="text-xs text-muted-foreground">
+                              <span className="font-semibold text-sm text-white">{stat.candidateCount}</span> candidates
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              <span className="font-semibold text-sm text-white">{stat.totalVotes}</span> votes
+                            </div>
+                          </div>
+                        </div>
+                        <Button 
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSelectedUniversity(stat.university)}
+                        >
+                          View
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+            
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle>
+                  {selectedUniversity === 'all' 
+                    ? 'All Universities' 
+                    : `Results for ${selectedUniversity}`
+                  }
+                </CardTitle>
+              </CardHeader>
               <CardContent>
-                {resultsData.length === 0 ? (
+                {filteredResultsData.length === 0 ? (
                   <div className="text-center p-4">
                     <p>No candidates available to display results.</p>
                   </div>
@@ -537,7 +660,7 @@ const Admin = () => {
                   <>
                     <div className="h-[300px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={resultsData} margin={{ top: 20, right: 30, left: 20, bottom: 50 }}>
+                        <BarChart data={filteredResultsData} margin={{ top: 20, right: 30, left: 20, bottom: 50 }}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis 
                             dataKey="name" 
@@ -570,7 +693,7 @@ const Admin = () => {
                     <div className="mt-6">
                       <h3 className="font-medium mb-2">Vote Breakdown:</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {resultsData.map((candidate, index) => (
+                        {filteredResultsData.map((candidate, index) => (
                           <div key={index} className="flex items-center space-x-2 p-2 border rounded">
                             <div className="h-4 w-4" style={{ backgroundColor: candidate.fill }}></div>
                             <div className="flex-1">

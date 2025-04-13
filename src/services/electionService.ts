@@ -157,6 +157,11 @@ export const electionService = {
     return apiCall('/candidates');
   },
   
+  // Get candidates by university
+  getCandidatesByUniversity: async (university: string): Promise<Candidate[]> => {
+    return apiCall(`/candidates/university/${encodeURIComponent(university)}`);
+  },
+  
   // Add a candidate
   addCandidate: async (candidate: Omit<Candidate, 'id'>): Promise<Candidate> => {
     return apiCall('/candidates', {
