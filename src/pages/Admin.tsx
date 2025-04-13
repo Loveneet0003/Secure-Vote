@@ -121,14 +121,29 @@ const Admin = () => {
   useEffect(() => {
     if (!isPolling) return;
     
-    const pollInterval = setInterval(async () => {
+    // Get both stats and vote data
+    const fetchUpdates = async () => {
       try {
+        // Get vote statistics
         const newStats = await electionService.getVoteStatistics();
         setVoteStats(newStats);
+        
+        // Get updated election data to refresh votes
+        const electionData = await electionService.getElectionData();
+        if (electionData && electionData.votes) {
+          console.log("Refreshed vote data:", electionData.votes);
+          setVoteData(electionData.votes);
+        }
       } catch (error) {
-        console.error('Error fetching vote statistics:', error);
+        console.error('Error during data polling:', error);
       }
-    }, 5000); // Poll every 5 seconds
+    };
+
+    // Initial fetch
+    fetchUpdates();
+    
+    // Set up polling interval
+    const pollInterval = setInterval(fetchUpdates, 5000); // Poll every 5 seconds
     
     return () => clearInterval(pollInterval);
   }, [isPolling]);
@@ -304,10 +319,47 @@ const Admin = () => {
     const candidateId = candidates[randomIndex].id;
     
     try {
-      await electionService.castVote(candidateId);
+      // Show loading toast
+      const loadingToast = toast.loading(`Casting vote for ${candidates[randomIndex].name}...`);
+      
+      // Cast the vote
+      const voteResponse = await electionService.castVote(candidateId);
+      
+      // Update toast
+      toast.dismiss(loadingToast);
       toast.success(`Vote cast for ${candidates[randomIndex].name}`);
+      
+      // Update vote data if it's included in the response
+      if (voteResponse && voteResponse.votes) {
+        console.log("Using vote data from response:", voteResponse.votes);
+        setVoteData(voteResponse.votes);
+        
+        if (voteResponse.stats) {
+          setVoteStats({
+            ...voteResponse.stats,
+            lastUpdated: new Date(voteResponse.stats.lastUpdated)
+          });
+        }
+      } else {
+        // Fallback to election data refresh
+        try {
+          const electionData = await electionService.getElectionData();
+          if (electionData && electionData.votes) {
+            console.log("Updated vote data after simulation:", electionData.votes);
+            setVoteData(electionData.votes);
+            
+            setVoteStats({
+              ...electionData.stats,
+              lastUpdated: new Date(electionData.stats.lastUpdated)
+            });
+          }
+        } catch (refreshError) {
+          console.error('Error refreshing data after vote:', refreshError);
+        }
+      }
     } catch (error) {
       console.error('Failed to cast vote:', error);
+      toast.error("Failed to cast vote. Please try again.");
     }
   };
 
