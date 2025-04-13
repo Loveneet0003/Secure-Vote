@@ -1,5 +1,5 @@
 import { toast } from "sonner";
-import ApiTest from './components/ApiTest';
+import ApiTest from './components/ApiTest';  // This is causing the error
 
 // Types
 export interface Candidate {
@@ -381,20 +381,41 @@ export const electionService = {
     console.log(`Casting vote for candidate: ${candidateId}`);
     
     try {
-      const response = await apiCall('/vote', {
+      // Use a more direct fetch with detailed logs for debugging
+      const baseUrl = getApiBaseUrl();
+      const url = `${baseUrl}/vote`;
+      console.log(`Sending vote request to: ${url}`);
+      
+      const payload = { candidateId };
+      console.log(`Vote payload: ${JSON.stringify(payload)}`);
+      
+      const response = await fetch(url, {
         method: 'POST',
-        body: JSON.stringify({ candidateId }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
       });
       
-      console.log('Vote cast successfully, server response:', response);
+      console.log(`Vote response status: ${response.status} ${response.statusText}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Vote error response: ${errorText}`);
+        throw new Error(`Failed to cast vote: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('Vote cast successfully, server response:', data);
       
       // Return the vote data if it's included in the response
-      if (response && response.votes) {
+      if (data && data.votes) {
+        console.log(`Vote data received with ${Object.keys(data.votes).length} vote records`);
         return {
           success: true,
           candidateId,
-          votes: response.votes,
-          stats: response.stats
+          votes: data.votes,
+          stats: data.stats
         };
       }
       
