@@ -178,7 +178,12 @@ const Admin = () => {
     
     try {
       console.log("Sending candidate data:", newCandidate);
+      
+      // Verbose logging of the request
+      toast.info("Submitting candidate data...");
+      
       const addedCandidate = await electionService.addCandidate(newCandidate);
+      
       console.log("Response:", addedCandidate);
       setCandidates(prev => [...prev, addedCandidate]);
       setNewCandidate({ name: '', university: '', position: '', bio: '' });
@@ -187,9 +192,14 @@ const Admin = () => {
       // Refresh vote data to include the new candidate
       const data = await electionService.getElectionData();
       setVoteData(data.votes || {});
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to add candidate:', error);
-      toast.error("Failed to add candidate. Please try again.");
+      // More detailed error message
+      const errorMessage = error.message || "Unknown error occurred";
+      toast.error(`Failed to add candidate: ${errorMessage}`);
+      
+      // Display stack trace in console for debugging
+      console.error('Stack trace:', error.stack);
     }
   };
 

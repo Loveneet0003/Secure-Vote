@@ -26,26 +26,49 @@ export interface VoteStatistics {
 // Replace with your actual Render deployment URL
 const API_URL = import.meta.env.VITE_RENDER_API_URL || 'http://localhost:3001/api';
 
+console.log("API URL configured as:", API_URL);
+
 // Helper function for API calls
 const apiCall = async (endpoint: string, options = {}) => {
+  const url = `${API_URL}${endpoint}`;
+  console.log(`Making API call to ${url}`, options);
+  
   try {
-    console.log(`Making API call to ${API_URL}${endpoint}`, options);
+    // Add a timeout to the fetch to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
       },
+      signal: controller.signal,
       ...options,
     });
+    
+    clearTimeout(timeoutId);
+    
+    console.log(`Response status:`, response.status, response.statusText);
     
     if (!response.ok) {
       let errorMessage = `API error: ${response.status} ${response.statusText}`;
       
       try {
         const errorData = await response.json();
+        console.error('Error response:', errorData);
         errorMessage = errorData.message || errorData.error || errorMessage;
-      } catch {
-        // If response is not JSON, use status text
+      } catch (parseError) {
+        console.error('Could not parse error response:', parseError);
+        // If response is not JSON, try to get text
+        try {
+          const textResponse = await response.text();
+          if (textResponse) {
+            console.error('Error text response:', textResponse);
+            errorMessage = `${errorMessage} - ${textResponse}`;
+          }
+        } catch (textError) {
+          console.error('Could not get error text:', textError);
+        }
       }
       
       console.error(`API Error (${endpoint}):`, errorMessage);
@@ -60,6 +83,14 @@ const apiCall = async (endpoint: string, options = {}) => {
     console.log(`API response from ${endpoint}:`, data);
     return data;
   } catch (error: any) {
+    // Check if it's an abort error (timeout)
+    if (error.name === 'AbortError') {
+      const timeoutMsg = 'Request timed out. The server may be down or slow to respond.';
+      console.error(`API Timeout (${endpoint}):`, timeoutMsg);
+      toast.error(timeoutMsg);
+      throw new Error(timeoutMsg);
+    }
+    
     console.error(`API Error (${endpoint}):`, error);
     toast.error(error.message || 'Server error. Please try again.');
     throw error;
