@@ -342,10 +342,31 @@ export const electionService = {
   },
   
   // Cast a vote (for demo purposes)
-  castVote: async (candidateId: string): Promise<void> => {
-    return apiCall('/vote', {
-      method: 'POST',
-      body: JSON.stringify({ candidateId }),
-    });
+  castVote: async (candidateId: string) => {
+    console.log(`Casting vote for candidate: ${candidateId}`);
+    
+    try {
+      const response = await apiCall('/vote', {
+        method: 'POST',
+        body: JSON.stringify({ candidateId }),
+      });
+      
+      console.log('Vote cast successfully, server response:', response);
+      
+      // Return the vote data if it's included in the response
+      if (response && response.votes) {
+        return {
+          success: true,
+          candidateId,
+          votes: response.votes,
+          stats: response.stats
+        };
+      }
+      
+      return { success: true, candidateId };
+    } catch (error) {
+      console.error('Error casting vote:', error);
+      throw error;
+    }
   },
 }; 
