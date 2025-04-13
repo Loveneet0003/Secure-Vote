@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import ApiTest from './components/ApiTest';
 
 // Types
 export interface Candidate {
