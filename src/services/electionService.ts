@@ -181,7 +181,30 @@ export const electionService = {
 
   // Get all election data in one call
   getElectionData: async () => {
-    return apiCall('/election');
+    try {
+      const data = await apiCall('/election');
+      
+      // Validate vote data structure
+      if (data && !data.votes) {
+        data.votes = {};
+        console.warn('Election data missing votes object, created empty one');
+      }
+      
+      // Ensure all candidates have vote entries
+      if (data && data.candidates && data.votes) {
+        for (const candidate of data.candidates) {
+          if (data.votes[candidate.id] === undefined) {
+            data.votes[candidate.id] = 0;
+            console.log(`Added missing vote record for candidate ${candidate.name}`);
+          }
+        }
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('Failed to fetch election data:', error);
+      throw error;
+    }
   },
   
   // Get candidates
@@ -346,24 +369,40 @@ export const electionService = {
     console.log(`Casting vote for candidate: ${candidateId}`);
     
     try {
+      // Ensure candidateId is a string
+      const id = candidateId.toString();
+      
       const response = await apiCall('/vote', {
         method: 'POST',
-        body: JSON.stringify({ candidateId }),
+        body: JSON.stringify({ candidateId: id }),
       });
       
       console.log('Vote cast successfully, server response:', response);
       
       // Return the vote data if it's included in the response
       if (response && response.votes) {
+        // Ensure all vote values are numbers
+        const validatedVotes: Record<string, number> = {};
+        
+        // Convert any non-numeric values to 0
+        for (const [key, value] of Object.entries(response.votes)) {
+          validatedVotes[key] = typeof value === 'number' ? value : 0;
+        }
+        
         return {
           success: true,
-          candidateId,
-          votes: response.votes,
-          stats: response.stats
+          candidateId: id,
+          votes: validatedVotes,
+          stats: response.stats || {
+            totalVoters: 0,
+            votesCast: 0,
+            turnoutPercentage: 0,
+            lastUpdated: new Date()
+          }
         };
       }
       
-      return { success: true, candidateId };
+      return { success: true, candidateId: id };
     } catch (error) {
       console.error('Error casting vote:', error);
       throw error;

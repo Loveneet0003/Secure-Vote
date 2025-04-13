@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,35 +13,51 @@ import { useAuth } from '@/contexts/AuthContext';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login, isLoggedIn } = useAuth();
+  const location = useLocation();
+  const { login, isLoggedIn, isAdmin } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [adminEmail, setAdminEmail] = useState('admin123');
   const [adminPassword, setAdminPassword] = useState('admin@123');
   const [isLoading, setIsLoading] = useState(false);
   const [adminIsLoading, setAdminIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState('voter');
+
+  // Get the intended destination from location state, or default to homepage
+  const from = location.state?.from?.pathname || "/";
 
   // Redirect if already logged in
-  React.useEffect(() => {
+  useEffect(() => {
     if (isLoggedIn) {
-      navigate('/');
+      // Redirect admin to admin panel, regular users to homepage or intended destination
+      if (isAdmin) {
+        navigate('/admin');
+      } else {
+        navigate(from);
+      }
     }
-  }, [isLoggedIn, navigate]);
+  }, [isLoggedIn, isAdmin, navigate, from]);
 
   const handleVoterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     
     if (!email || !password) {
       toast.error("Please fill in all fields");
+      setError("Please fill in all fields");
       return;
     }
     
     setIsLoading(true);
     try {
       await login(email, password);
+      toast.success("Login successful!");
       // Navigation happens automatically via the useEffect when isLoggedIn changes
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login error:", error);
+      toast.error(error.message || "Login failed. Please check your credentials.");
+      setError(error.message || "Login failed. Please check your credentials.");
     } finally {
       setIsLoading(false);
     }
@@ -49,31 +65,49 @@ const Login = () => {
 
   const handleAdminSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     
     if (!adminEmail || !adminPassword) {
       toast.error("Please fill in all fields");
+      setError("Please fill in all fields");
       return;
     }
     
     setAdminIsLoading(true);
     try {
       await login(adminEmail, adminPassword);
+      toast.success("Admin login successful!");
       // Navigation happens automatically via the useEffect when isLoggedIn changes
-    } catch (error) {
+    } catch (error: any) {
       console.error("Admin login error:", error);
+      toast.error(error.message || "Login failed. Please check your credentials.");
+      setError(error.message || "Login failed. Please check your credentials.");
     } finally {
       setAdminIsLoading(false);
     }
   };
 
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    setError('');
+  };
+
   return (
     <Layout>
       <div className="container max-w-md mx-auto px-4 py-16">
-        <Tabs defaultValue="voter" className="w-full">
+        <Tabs defaultValue="voter" value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-8 glass">
             <TabsTrigger value="voter">Voter Login</TabsTrigger>
             <TabsTrigger value="admin">Admin Login</TabsTrigger>
           </TabsList>
+          
+          {error && (
+            <Alert variant="destructive" className="mb-4 bg-red-950/10 border border-red-800/20 text-red-500">
+              <AlertDescription>
+                {error}
+              </AlertDescription>
+            </Alert>
+          )}
           
           <TabsContent value="voter">
             <Card className="p-6 glass-card">
@@ -89,6 +123,7 @@ const Login = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={isLoading}
+                    required
                   />
                 </div>
                 
@@ -102,8 +137,16 @@ const Login = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={isLoading}
+                    required
                   />
                 </div>
+                
+                <Alert className="mt-4 bg-voting-blue/10 border-voting-blue/20">
+                  <InfoIcon className="h-4 w-4 text-voting-blue" />
+                  <AlertDescription className="text-xs">
+                    For demo purposes, login with: <strong>user@example.com</strong> and password <strong>password123</strong>
+                  </AlertDescription>
+                </Alert>
                 
                 <Button 
                   type="submit" 
@@ -151,6 +194,7 @@ const Login = () => {
                     value={adminEmail}
                     onChange={(e) => setAdminEmail(e.target.value)}
                     disabled={adminIsLoading}
+                    required
                   />
                 </div>
                 
@@ -164,6 +208,7 @@ const Login = () => {
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
                     disabled={adminIsLoading}
+                    required
                   />
                 </div>
                 

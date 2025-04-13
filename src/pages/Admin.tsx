@@ -125,25 +125,32 @@ const Admin = () => {
     // Get both stats and vote data
     const fetchUpdates = async () => {
       try {
-        console.log("Polling for vote updates...");
-        
         // Get vote statistics
         const newStats = await electionService.getVoteStatistics();
         setVoteStats(newStats);
-        console.log("Updated vote statistics:", newStats);
         
-        // Get updated election data to refresh votes
+        // Get updated election data to refresh votes and candidates
         const electionData = await electionService.getElectionData();
-        if (electionData && electionData.votes) {
-          console.log("Refreshed vote data:", electionData.votes);
-          setVoteData(electionData.votes);
+        if (electionData) {
+          console.log("Refreshed data:", electionData);
           
-          // Log all candidate votes for debugging
-          candidates.forEach(candidate => {
-            console.log(`Candidate ${candidate.name}: ${electionData.votes[candidate.id] || 0} votes`);
-          });
-        } else {
-          console.warn("No vote data in election response");
+          // Update candidates to catch any new ones added from other devices
+          if (electionData.candidates && electionData.candidates.length > 0) {
+            // Check if we have new candidates
+            const currentIds = new Set(candidates.map(c => c.id));
+            const newCandidates = electionData.candidates.filter(c => !currentIds.has(c.id));
+            
+            if (newCandidates.length > 0) {
+              console.log(`Found ${newCandidates.length} new candidates, updating list`);
+              setCandidates(electionData.candidates);
+            }
+          }
+          
+          // Update vote data
+          if (electionData.votes) {
+            console.log("Refreshed vote data:", electionData.votes);
+            setVoteData(electionData.votes);
+          }
         }
       } catch (error) {
         console.error('Error during data polling:', error);
@@ -153,8 +160,8 @@ const Admin = () => {
     // Initial fetch
     fetchUpdates();
     
-    // Set up polling interval - poll every 3 seconds for more responsive updates
-    const pollInterval = setInterval(fetchUpdates, 3000);
+    // Set up polling interval
+    const pollInterval = setInterval(fetchUpdates, 5000); // Poll every 5 seconds
     
     return () => clearInterval(pollInterval);
   }, [isPolling, candidates]);
@@ -239,23 +246,22 @@ const Admin = () => {
       setNewCandidate({ name: '', university: '', position: '', bio: '' });
       toast.success("Candidate added successfully");
       
-      // Refresh vote data to include the new candidate
-      const data = await electionService.getElectionData();
-      setVoteData(data.votes || {});
-    } catch (error: any) {
-      console.error('Failed to add candidate:', error);
-      
-      // Handle specific error types
-      let errorMessage = error.message || "Unknown error occurred";
-      
-      // Check for 404 Not Found errors specifically
-      if (errorMessage.includes("404")) {
-        errorMessage = "API endpoint not found (404). Check server configuration and API URL.";
+      // Refresh election data to include the new candidate and ensure vote records exist
+      try {
+        const data = await electionService.getElectionData();
+        if (data && data.votes) {
+          setVoteData(data.votes);
+        }
+      } catch (refreshError) {
+        console.error('Error refreshing data after adding candidate:', refreshError);
+        // Even if refresh fails, the candidate was added
       }
+    } catch (error: any) {
+      // Handle specific errors
+      let errorMessage = "Failed to add candidate";
       
-      // Check for network errors
-      if (error.name === 'TypeError' && errorMessage.includes('fetch')) {
-        errorMessage = "Network error: Cannot connect to server. Check if API is running.";
+      if (error.message) {
+        errorMessage = error.message;
       }
       
       // Display error message
@@ -342,7 +348,6 @@ const Admin = () => {
       const loadingToast = toast.loading(`Casting vote for ${candidate?.name || 'candidate'}...`);
       
       // Cast the vote
-      console.log(`Attempting to cast vote for candidate ID: ${candidateIdToVote}`);
       const voteResponse = await electionService.castVote(candidateIdToVote);
       
       // Update toast
@@ -352,46 +357,34 @@ const Admin = () => {
       // Update vote data if it's included in the response
       if (voteResponse && voteResponse.votes) {
         console.log("Using vote data from response:", voteResponse.votes);
-        console.log(`Votes for selected candidate: ${voteResponse.votes[candidateIdToVote]}`);
-        
-        // Directly update vote data to ensure UI reflects the change
         setVoteData(voteResponse.votes);
         
         if (voteResponse.stats) {
-          console.log("Using stats from response:", voteResponse.stats);
           setVoteStats({
             ...voteResponse.stats,
             lastUpdated: new Date(voteResponse.stats.lastUpdated)
           });
         }
       } else {
-        console.log("No vote data in response, falling back to election data refresh");
         // Fallback to election data refresh
         try {
-          // Force immediate refresh after vote
           const electionData = await electionService.getElectionData();
           if (electionData && electionData.votes) {
             console.log("Updated vote data after simulation:", electionData.votes);
-            console.log(`Votes for selected candidate: ${electionData.votes[candidateIdToVote]}`);
-            
-            // Update state with new data
             setVoteData(electionData.votes);
             
             setVoteStats({
               ...electionData.stats,
               lastUpdated: new Date(electionData.stats.lastUpdated)
             });
-          } else {
-            console.warn("No vote data found in election response either");
           }
         } catch (refreshError) {
           console.error('Error refreshing data after vote:', refreshError);
-          toast.error("Vote was cast but couldn't refresh data");
         }
       }
     } catch (error) {
       console.error('Failed to cast vote:', error);
-      toast.error(`Failed to cast vote: ${error.message}`);
+      toast.error("Failed to cast vote. Please try again.");
     }
   };
 
