@@ -34,12 +34,18 @@ const getApiBaseUrl = () => {
   // Remove trailing slash if present
   const baseUrl = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
   
-  // Add /api if not already present in the path
-  // But avoid adding it twice if it's already there at the end
-  const url = baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
-  
-  console.log("Final API base URL:", url);
-  return url;
+  // Check if the URL already includes /api somewhere in the path
+  if (baseUrl.includes('/api')) {
+    // If URL already has /api in it, don't add it again
+    // This handles cases like example.com/api or api.example.com
+    console.log("URL already contains /api path, using as is:", baseUrl);
+    return baseUrl;
+  } else {
+    // Add /api if not already present in the path
+    const url = `${baseUrl}/api`;
+    console.log("Added /api to base URL:", url);
+    return url;
+  }
 };
 
 // Check if API is accessible
@@ -94,6 +100,34 @@ const apiCall = async (endpoint: string, options = {}) => {
     clearTimeout(timeoutId);
     
     console.log(`Response status:`, response.status, response.statusText);
+    
+    // Special handling for 404 errors
+    if (response.status === 404) {
+      console.warn(`Endpoint not found: ${url}`);
+      
+      // Try alternative endpoints for common patterns
+      if (endpoint.includes('/university/')) {
+        console.log('University-specific endpoint not found, falling back to all candidates');
+        
+        // If trying to get candidates by university, fallback to getting all candidates
+        const fallbackUrl = `${baseUrl}/candidates`;
+        console.log(`Trying fallback URL: ${fallbackUrl}`);
+        
+        const fallbackResponse = await fetch(fallbackUrl, {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (fallbackResponse.ok) {
+          const data = await fallbackResponse.json();
+          console.log('Fallback successful, filtering data client-side');
+          return data;
+        }
+      }
+      
+      throw new Error(`Resource not found: ${endpoint}`);
+    }
     
     if (!response.ok) {
       let errorMessage = `API error: ${response.status} ${response.statusText}`;
