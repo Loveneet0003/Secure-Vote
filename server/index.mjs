@@ -24,18 +24,28 @@ const PORT = process.env.PORT || 3001;
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/secure-vote';
 let db;
+let isConnected = false;
 
 // Connect to MongoDB
 async function connectToDatabase() {
   try {
-    const client = new MongoClient(MONGODB_URI);
+    console.log('Attempting to connect to MongoDB with URI:', 
+                MONGODB_URI ? `${MONGODB_URI.substring(0, 15)}...` : 'missing URI');
+    
+    const client = new MongoClient(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000, // 5 seconds timeout for server selection
+      socketTimeoutMS: 45000, // 45 seconds timeout for operations
+    });
+    
     await client.connect();
-    console.log('Connected to MongoDB');
+    console.log('Connected to MongoDB successfully');
     db = client.db();
+    isConnected = true;
     
     // Create initial collections if they don't exist
     const collections = await db.listCollections().toArray();
     const collectionNames = collections.map(c => c.name);
+    console.log('Existing collections:', collectionNames);
     
     if (!collectionNames.includes('candidates')) {
       await db.createCollection('candidates');
@@ -92,13 +102,27 @@ async function connectToDatabase() {
     
   } catch (error) {
     console.error('MongoDB connection error:', error);
-    process.exit(1);
+    // Don't exit the process, try to keep the server running
+    // but mark as not connected
+    isConnected = false;
   }
 }
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Add middleware to check DB connection
+app.use((req, res, next) => {
+  if (!isConnected && req.path !== '/api/health') {
+    console.error('Database not connected, rejecting request to', req.path);
+    return res.status(503).json({ 
+      error: 'Service Unavailable', 
+      message: 'Database connection is not established. Please try again later.' 
+    });
+  }
+  next();
+});
 
 // Routes
 app.get('/api/health', (req, res) => {
@@ -111,15 +135,30 @@ app.get('/api/health', (req, res) => {
 // Get all election data
 app.get('/api/election', async (req, res) => {
   try {
+    console.log('Fetching all election data');
     const candidates = await db.collection('candidates').find({}).toArray();
     const settings = await db.collection('settings').findOne({});
     
+    console.log(`Found ${candidates.length} candidates`);
+    
     // Get votes for each candidate
     const votes = {};
+    const voteRecords = await db.collection('votes').find({}).toArray();
+    console.log(`Found ${voteRecords.length} vote records`);
+    
+    // Create a map of candidateId to vote count
+    const voteMap = voteRecords.reduce((map, vote) => {
+      map[vote.candidateId] = vote.count || 0;
+      return map;
+    }, {});
+    
+    // Ensure each candidate has a vote count (even if 0)
     for (const candidate of candidates) {
-      const vote = await db.collection('votes').findOne({ candidateId: candidate._id.toString() });
-      votes[candidate._id.toString()] = vote ? vote.count : 0;
+      const candidateId = candidate._id.toString();
+      votes[candidateId] = voteMap[candidateId] || 0;
     }
+    
+    console.log('Vote counts:', votes);
     
     // Get vote statistics
     const voterStats = await db.collection('voters').findOne({ _id: 'stats' });
@@ -139,7 +178,7 @@ app.get('/api/election', async (req, res) => {
       bio: c.bio
     }));
     
-    res.json({
+    const response = {
       candidates: transformedCandidates,
       settings: settings || {},
       votes,
@@ -149,10 +188,13 @@ app.get('/api/election', async (req, res) => {
         turnoutPercentage,
         lastUpdated: new Date()
       }
-    });
+    };
+    
+    console.log('Sending election data response');
+    res.json(response);
   } catch (error) {
     console.error('Error fetching election data:', error);
-    res.status(500).json({ error: 'Failed to fetch election data' });
+    res.status(500).json({ error: 'Failed to fetch election data', message: error.message });
   }
 });
 
@@ -178,25 +220,58 @@ app.get('/api/candidates', async (req, res) => {
 // Add a candidate
 app.post('/api/candidates', async (req, res) => {
   try {
+    console.log('Received add candidate request:', req.body);
+    
+    // Validate required fields
     const candidate = req.body;
-    const result = await db.collection('candidates').insertOne(candidate);
+    if (!candidate.name || !candidate.position || !candidate.university) {
+      console.error('Missing required fields in candidate data');
+      return res.status(400).json({ 
+        error: 'Missing required fields', 
+        message: 'Name, position, and university are required' 
+      });
+    }
     
-    const candidateId = result.insertedId.toString();
+    // Double-check database connection
+    if (!db) {
+      console.error('Database object is undefined when trying to add candidate');
+      return res.status(500).json({ 
+        error: 'Database Error', 
+        message: 'Database connection issue. Please try again later.' 
+      });
+    }
     
-    // Initialize vote count for the new candidate
-    await db.collection('votes').insertOne({
-      candidateId,
-      count: 0
-    });
-    
-    // Return the created candidate with id
-    res.status(201).json({
-      id: candidateId,
-      ...candidate
-    });
+    try {
+      const result = await db.collection('candidates').insertOne(candidate);
+      console.log('Candidate inserted with ID:', result.insertedId);
+      
+      const candidateId = result.insertedId.toString();
+      
+      // Initialize vote count for the new candidate
+      await db.collection('votes').insertOne({
+        candidateId,
+        count: 0
+      });
+      console.log('Vote record initialized for candidate ID:', candidateId);
+      
+      // Return the created candidate with id
+      const createdCandidate = {
+        id: candidateId,
+        ...candidate
+      };
+      console.log('Returning created candidate:', createdCandidate);
+      
+      res.status(201).json(createdCandidate);
+    } catch (dbError) {
+      console.error('Database operation error when adding candidate:', dbError);
+      res.status(500).json({ 
+        error: 'Database Operation Failed', 
+        message: dbError.message || 'Failed to add candidate to database'
+      });
+    }
   } catch (error) {
     console.error('Error adding candidate:', error);
-    res.status(500).json({ error: 'Failed to add candidate' });
+    res.status(500).json({ error: 'Failed to add candidate', message: error.message });
   }
 });
 
@@ -205,12 +280,23 @@ app.put('/api/candidates/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
+    console.log(`Updating candidate ${id} with:`, updates);
+    
+    // Validate required fields
+    if (!updates.name || !updates.position || !updates.university) {
+      console.error('Missing required fields in update data');
+      return res.status(400).json({ 
+        error: 'Missing required fields', 
+        message: 'Name, position, and university are required' 
+      });
+    }
     
     // Ensure ObjectId is valid
     let objectId;
     try {
       objectId = new ObjectId(id);
     } catch {
+      console.error('Invalid ObjectId format:', id);
       return res.status(400).json({ error: 'Invalid candidate ID' });
     }
     
@@ -220,23 +306,29 @@ app.put('/api/candidates/:id', async (req, res) => {
     );
     
     if (result.matchedCount === 0) {
+      console.error('Candidate not found with ID:', id);
       return res.status(404).json({ error: 'Candidate not found' });
     }
+    
+    console.log(`Candidate ${id} updated successfully`);
     
     // Get updated candidate
     const updatedCandidate = await db.collection('candidates').findOne({ _id: objectId });
     
     // Transform for client
-    res.json({
+    const response = {
       id,
       name: updatedCandidate.name,
       university: updatedCandidate.university,
       position: updatedCandidate.position,
       bio: updatedCandidate.bio
-    });
+    };
+    console.log('Returning updated candidate:', response);
+    
+    res.json(response);
   } catch (error) {
     console.error('Error updating candidate:', error);
-    res.status(500).json({ error: 'Failed to update candidate' });
+    res.status(500).json({ error: 'Failed to update candidate', message: error.message });
   }
 });
 
@@ -297,39 +389,67 @@ app.put('/api/settings', async (req, res) => {
 app.post('/api/vote', async (req, res) => {
   try {
     const { candidateId } = req.body;
+    console.log(`Casting vote for candidate ID: ${candidateId}`);
+    
+    if (!candidateId) {
+      console.error('Missing candidateId in request body');
+      return res.status(400).json({ error: 'Missing candidateId', message: 'Candidate ID is required' });
+    }
     
     // Check if candidate exists
     let objectId;
     try {
       objectId = new ObjectId(candidateId);
-    } catch {
-      return res.status(400).json({ error: 'Invalid candidate ID' });
+    } catch (error) {
+      console.error('Invalid candidate ID format:', candidateId);
+      return res.status(400).json({ error: 'Invalid candidate ID format', message: error.message });
     }
     
     const candidate = await db.collection('candidates').findOne({ _id: objectId });
     if (!candidate) {
-      return res.status(404).json({ error: 'Candidate not found' });
+      console.error('Candidate not found with ID:', candidateId);
+      return res.status(404).json({ error: 'Candidate not found', message: 'No candidate exists with the provided ID' });
     }
+    
+    console.log(`Found candidate: ${candidate.name}`);
     
     // Find or create vote record
     const voteRecord = await db.collection('votes').findOne({ candidateId });
     
+    let result;
     if (voteRecord) {
-      await db.collection('votes').updateOne(
+      console.log(`Updating existing vote record for ${candidateId}, current count: ${voteRecord.count}`);
+      result = await db.collection('votes').updateOne(
         { candidateId },
         { $inc: { count: 1 } }
       );
+      console.log(`Vote record updated: ${result.modifiedCount} document modified`);
     } else {
-      await db.collection('votes').insertOne({
+      console.log(`Creating new vote record for ${candidateId}`);
+      result = await db.collection('votes').insertOne({
         candidateId,
         count: 1
       });
+      console.log(`Vote record created with ID: ${result.insertedId}`);
     }
     
-    res.json({ success: true });
+    // Get updated vote count
+    const updatedVoteRecord = await db.collection('votes').findOne({ candidateId });
+    const newCount = updatedVoteRecord ? updatedVoteRecord.count : 1;
+    
+    console.log(`New vote count for ${candidate.name}: ${newCount}`);
+    
+    res.json({ 
+      success: true, 
+      candidate: {
+        id: candidateId,
+        name: candidate.name
+      },
+      newCount
+    });
   } catch (error) {
     console.error('Error casting vote:', error);
-    res.status(500).json({ error: 'Failed to cast vote' });
+    res.status(500).json({ error: 'Failed to cast vote', message: error.message });
   }
 });
 
