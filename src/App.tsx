@@ -16,6 +16,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import React, { useEffect } from 'react';
 import { electionService } from './services/electionService';
+import ApiTest from './components/ApiTest';
 
 const queryClient = new QueryClient();
 
