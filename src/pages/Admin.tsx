@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import ApiTest from '@/components/ApiTest';
+import { PlusCircle } from 'lucide-react';
 
 // List of universities based on the logos folder
 const UNIVERSITIES = [
@@ -124,15 +125,25 @@ const Admin = () => {
     // Get both stats and vote data
     const fetchUpdates = async () => {
       try {
+        console.log("Polling for vote updates...");
+        
         // Get vote statistics
         const newStats = await electionService.getVoteStatistics();
         setVoteStats(newStats);
+        console.log("Updated vote statistics:", newStats);
         
         // Get updated election data to refresh votes
         const electionData = await electionService.getElectionData();
         if (electionData && electionData.votes) {
           console.log("Refreshed vote data:", electionData.votes);
           setVoteData(electionData.votes);
+          
+          // Log all candidate votes for debugging
+          candidates.forEach(candidate => {
+            console.log(`Candidate ${candidate.name}: ${electionData.votes[candidate.id] || 0} votes`);
+          });
+        } else {
+          console.warn("No vote data in election response");
         }
       } catch (error) {
         console.error('Error during data polling:', error);
@@ -142,11 +153,11 @@ const Admin = () => {
     // Initial fetch
     fetchUpdates();
     
-    // Set up polling interval
-    const pollInterval = setInterval(fetchUpdates, 5000); // Poll every 5 seconds
+    // Set up polling interval - poll every 3 seconds for more responsive updates
+    const pollInterval = setInterval(fetchUpdates, 3000);
     
     return () => clearInterval(pollInterval);
-  }, [isPolling]);
+  }, [isPolling, candidates]);
 
   // Prepare data for the chart
   const resultsData = candidates.map((candidate) => {
@@ -312,54 +323,75 @@ const Admin = () => {
   };
 
   // For demo purposes: Cast a vote for a random candidate
-  const handleSimulateVote = async () => {
+  const handleSimulateVote = async (candidateId?: string) => {
     if (candidates.length === 0) return;
     
-    const randomIndex = Math.floor(Math.random() * candidates.length);
-    const candidateId = candidates[randomIndex].id;
+    let candidateIdToVote = candidateId;
+    
+    // If no specific candidate ID was provided, pick a random one
+    if (!candidateIdToVote) {
+      const randomIndex = Math.floor(Math.random() * candidates.length);
+      candidateIdToVote = candidates[randomIndex].id;
+    }
+    
+    // Find the candidate name for the toast message
+    const candidate = candidates.find(c => c.id === candidateIdToVote);
     
     try {
       // Show loading toast
-      const loadingToast = toast.loading(`Casting vote for ${candidates[randomIndex].name}...`);
+      const loadingToast = toast.loading(`Casting vote for ${candidate?.name || 'candidate'}...`);
       
       // Cast the vote
-      const voteResponse = await electionService.castVote(candidateId);
+      console.log(`Attempting to cast vote for candidate ID: ${candidateIdToVote}`);
+      const voteResponse = await electionService.castVote(candidateIdToVote);
       
       // Update toast
       toast.dismiss(loadingToast);
-      toast.success(`Vote cast for ${candidates[randomIndex].name}`);
+      toast.success(`Vote cast for ${candidate?.name || 'candidate'}`);
       
       // Update vote data if it's included in the response
       if (voteResponse && voteResponse.votes) {
         console.log("Using vote data from response:", voteResponse.votes);
+        console.log(`Votes for selected candidate: ${voteResponse.votes[candidateIdToVote]}`);
+        
+        // Directly update vote data to ensure UI reflects the change
         setVoteData(voteResponse.votes);
         
         if (voteResponse.stats) {
+          console.log("Using stats from response:", voteResponse.stats);
           setVoteStats({
             ...voteResponse.stats,
             lastUpdated: new Date(voteResponse.stats.lastUpdated)
           });
         }
       } else {
+        console.log("No vote data in response, falling back to election data refresh");
         // Fallback to election data refresh
         try {
+          // Force immediate refresh after vote
           const electionData = await electionService.getElectionData();
           if (electionData && electionData.votes) {
             console.log("Updated vote data after simulation:", electionData.votes);
+            console.log(`Votes for selected candidate: ${electionData.votes[candidateIdToVote]}`);
+            
+            // Update state with new data
             setVoteData(electionData.votes);
             
             setVoteStats({
               ...electionData.stats,
               lastUpdated: new Date(electionData.stats.lastUpdated)
             });
+          } else {
+            console.warn("No vote data found in election response either");
           }
         } catch (refreshError) {
           console.error('Error refreshing data after vote:', refreshError);
+          toast.error("Vote was cast but couldn't refresh data");
         }
       }
     } catch (error) {
       console.error('Failed to cast vote:', error);
-      toast.error("Failed to cast vote. Please try again.");
+      toast.error(`Failed to cast vote: ${error.message}`);
     }
   };
 
@@ -526,13 +558,14 @@ const Admin = () => {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">University</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Votes</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {candidates.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="px-6 py-4 text-center text-gray-500">No candidates added yet</td>
+                          <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No candidates added yet</td>
                         </tr>
                       ) : (
                         candidates.map(candidate => (
@@ -551,6 +584,28 @@ const Admin = () => {
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">{candidate.position}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <div className="bg-gradient-to-r from-blue-500/10 to-blue-600/10 rounded-md px-3 py-1 flex items-center">
+                                  <span className="font-medium text-blue-600">{voteData[candidate.id] || 0}</span>
+                                  <span className="text-xs text-muted-foreground ml-1">votes</span>
+                                  {isPolling && (
+                                    <div className="ml-2 w-2 h-2 relative">
+                                      <span className="flex rounded-full h-2 w-2 bg-blue-500 animate-pulse"></span>
+                                    </div>
+                                  )}
+                                </div>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-6 w-6"
+                                  onClick={() => handleSimulateVote(candidate.id)}
+                                  title="Cast test vote"
+                                >
+                                  <PlusCircle className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <Button 
                                 variant="outline" 
