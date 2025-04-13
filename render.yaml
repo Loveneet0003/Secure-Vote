@@ -2,8 +2,8 @@ services:
   - type: web
     name: secure-vote-api
     env: node
-    buildCommand: chmod +x render-build.sh && ./render-build.sh
-    startCommand: cd server && node index.mjs
+    buildCommand: npm install
+    startCommand: npm start
     envVars:
       - key: PORT
         value: 3001

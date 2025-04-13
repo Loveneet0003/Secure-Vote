@@ -3,9 +3,20 @@ import express from 'express';
 import cors from 'cors';
 import { MongoClient, ObjectId } from 'mongodb';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, resolve, join } from 'path';
 
-// Load environment variables
-dotenv.config();
+// Setup correct paths for ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const rootDir = resolve(__dirname, '..');
+
+// Load environment variables from various locations
+dotenv.config({ path: join(rootDir, '.env') });
+dotenv.config({ path: join(__dirname, '.env') });
+
+console.log('MongoDB URI:', process.env.MONGODB_URI ? 'URI exists' : 'URI missing');
+console.log('PORT:', process.env.PORT);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
