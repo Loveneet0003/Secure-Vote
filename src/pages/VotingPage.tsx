@@ -34,7 +34,34 @@ const VotingPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // State for candidate votes
+  const [candidateVotes, setCandidateVotes] = useState<Record<string, number>>({});
+
   const universityName = universityId ? UniversityNames[universityId as keyof typeof UniversityNames] : 'Unknown University';
+
+  // Polling for vote updates
+  useEffect(() => {
+    // Skip if no candidates loaded yet
+    if (candidates.length === 0) return;
+    
+    const updateVotes = async () => {
+      try {
+        const electionData = await electionService.getElectionData();
+        if (electionData && electionData.votes) {
+          setCandidateVotes(electionData.votes);
+        }
+      } catch (error) {
+        console.error("Error updating vote counts:", error);
+        // Don't show error to user during background polling
+      }
+    };
+    
+    // Update immediately and then every 5 seconds
+    updateVotes();
+    const interval = setInterval(updateVotes, 5000);
+    
+    return () => clearInterval(interval);
+  }, [candidates]);
 
   useEffect(() => {
     const fetchCandidates = async () => {
@@ -61,17 +88,91 @@ const VotingPage = () => {
           return;
         }
         
-        const universityCandidates = await electionService.getCandidatesByUniversity(universityFullName);
+        console.log(`Fetching candidates for university: ${universityFullName}`);
         
-        setCandidates(universityCandidates.map(candidate => ({
-          id: candidate.id,
-          name: candidate.name,
-          party: candidate.position,
-          position: candidate.position,
-          bio: candidate.bio
-        })));
-        
-        console.log(`Fetched ${universityCandidates.length} candidates for ${universityFullName}`);
+        // First attempt: Try to get all candidates and filter on client
+        try {
+          console.log("Fetching all candidates and filtering client-side");
+          const allCandidates = await electionService.getCandidates();
+          console.log(`Fetched ${allCandidates.length} total candidates`);
+          
+          const universityCandidates = allCandidates.filter(
+            candidate => candidate.university === universityFullName
+          );
+          
+          console.log(`Found ${universityCandidates.length} candidates for ${universityFullName}`);
+          
+          if (universityCandidates.length > 0) {
+            setCandidates(universityCandidates.map(candidate => ({
+              id: candidate.id,
+              name: candidate.name,
+              party: candidate.position,
+              position: candidate.position,
+              bio: candidate.bio
+            })));
+            
+            // Set vote counts if election data is available
+            try {
+              const electionData = await electionService.getElectionData();
+              if (electionData && electionData.votes) {
+                setCandidateVotes(electionData.votes);
+              }
+            } catch (voteError) {
+              console.error("Error fetching vote data:", voteError);
+              // Initialize with zero votes as fallback
+              setCandidateVotes(universityCandidates.reduce((acc, c) => {
+                acc[c.id] = 0;
+                return acc;
+              }, {} as Record<string, number>));
+            }
+          } else {
+            throw new Error(`No candidates found for ${universityFullName}`);
+          }
+        } catch (apiError) {
+          console.error("Error with candidate API:", apiError);
+          
+          console.log("Trying fallback to election data API...");
+          try {
+            const electionData = await electionService.getElectionData();
+            
+            if (electionData && electionData.candidates) {
+              const allCandidates = electionData.candidates;
+              const universityCandidates = allCandidates.filter(
+                candidate => candidate.university === universityFullName
+              );
+              
+              console.log(`Found ${universityCandidates.length} candidates from election data`);
+              
+              if (universityCandidates.length > 0) {
+                setCandidates(universityCandidates.map(candidate => ({
+                  id: candidate.id,
+                  name: candidate.name,
+                  party: candidate.position,
+                  position: candidate.position,
+                  bio: candidate.bio
+                })));
+                
+                // Set vote counts if available
+                if (electionData.votes) {
+                  setCandidateVotes(electionData.votes);
+                } else {
+                  // Initialize with zero votes
+                  setCandidateVotes(universityCandidates.reduce((acc, c) => {
+                    acc[c.id] = 0;
+                    return acc;
+                  }, {} as Record<string, number>));
+                }
+              } else {
+                throw new Error(`No candidates found for ${universityFullName}`);
+              }
+            } else {
+              throw new Error("Could not fetch candidates from any available endpoint");
+            }
+          } catch (fallbackError) {
+            console.error("All fallback attempts failed:", fallbackError);
+            setError(`Failed to load candidates for ${universityFullName}. Please try again later.`);
+          }
+        }
       } catch (err) {
         console.error("Error fetching candidates:", err);
         setError("Failed to load candidates. Please try again later.");
@@ -190,6 +291,11 @@ const VotingPage = () => {
                             <GraduationCap className="h-4 w-4 mr-1" />
                             <p>{candidate.position}</p>
                           </div>
+                        </div>
+                        <div className="bg-voting-blue-dark/20 px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-1">
+                          <span className="text-voting-blue-light">{candidateVotes[candidate.id] || 0}</span>
+                          <span className="text-muted-foreground text-xs">votes</span>
+                          <span className="w-2 h-2 bg-voting-blue-light rounded-full animate-pulse ml-1"></span>
                         </div>
                       </div>
                     ))}
