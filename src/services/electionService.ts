@@ -29,6 +29,8 @@ const API_URL = import.meta.env.VITE_RENDER_API_URL || 'http://localhost:3001/ap
 // Helper function for API calls
 const apiCall = async (endpoint: string, options = {}) => {
   try {
+    console.log(`Making API call to ${API_URL}${endpoint}`, options);
+    
     const response = await fetch(`${API_URL}${endpoint}`, {
       headers: {
         'Content-Type': 'application/json',
@@ -37,15 +39,26 @@ const apiCall = async (endpoint: string, options = {}) => {
     });
     
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'API request failed');
+      let errorMessage = `API error: ${response.status} ${response.statusText}`;
+      
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || errorData.error || errorMessage;
+      } catch {
+        // If response is not JSON, use status text
+      }
+      
+      console.error(`API Error (${endpoint}):`, errorMessage);
+      throw new Error(errorMessage);
     }
     
     if (response.status === 204) {
       return null;
     }
     
-    return await response.json();
+    const data = await response.json();
+    console.log(`API response from ${endpoint}:`, data);
+    return data;
   } catch (error: any) {
     console.error(`API Error (${endpoint}):`, error);
     toast.error(error.message || 'Server error. Please try again.');

@@ -14,6 +14,39 @@ import {
   ElectionSettings, 
   VoteStatistics 
 } from '@/services/electionService';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+// List of universities based on the logos folder
+const UNIVERSITIES = [
+  { id: 'iitd', name: 'IIT Delhi' },
+  { id: 'uod', name: 'University of Delhi' },
+  { id: 'nith', name: 'NIT Hamirpur' },
+  { id: 'uom', name: 'University of Madras' },
+  { id: 'uoc', name: 'University of Calcutta' },
+  { id: 'ju', name: 'Jadavpur University' },
+  { id: 'uoh', name: 'University of Hyderabad' },
+  { id: 'bhu', name: 'Banaras Hindu University' },
+  { id: 'iis', name: 'Indian Institute of Science' }
+];
+
+// University utility functions
+const getUniversityId = (name: string): string => {
+  const university = UNIVERSITIES.find(u => u.name === name);
+  return university?.id || '';
+};
+
+const getUniversityLogo = (name: string): string => {
+  const id = getUniversityId(name);
+  return id ? `/logos/${id}.png` : '';
+};
 
 const Admin = () => {
   const [showChart, setShowChart] = useState(false);
@@ -45,6 +78,9 @@ const Admin = () => {
   
   const [isPolling, setIsPolling] = useState(true);
 
+  // Additional state for vote data
+  const [voteData, setVoteData] = useState<Record<string, number>>({});
+
   // Initial data loading
   useEffect(() => {
     const loadData = async () => {
@@ -63,6 +99,9 @@ const Admin = () => {
           ...data.stats,
           lastUpdated: new Date(data.stats.lastUpdated)
         });
+
+        // Fetch vote data separately
+        setVoteData(data.votes || {});
       } catch (error) {
         console.error('Failed to load initial data:', error);
         toast.error('Failed to load election data');
@@ -97,7 +136,7 @@ const Admin = () => {
     
     return {
       name: candidate.name,
-      votes: electionService.getElectionData().votes?.[candidate.id] || 0,
+      votes: voteData[candidate.id] || 0,
       university: candidate.university,
       fill: colors[colorIndex]
     };
@@ -123,6 +162,11 @@ const Admin = () => {
     const { id, value } = e.target;
     setNewCandidate(prev => ({ ...prev, [id]: value }));
   };
+  
+  // New handler for university select dropdown
+  const handleUniversityChange = (value: string) => {
+    setNewCandidate(prev => ({ ...prev, university: value }));
+  };
 
   const handleAddCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,12 +177,19 @@ const Admin = () => {
     }
     
     try {
+      console.log("Sending candidate data:", newCandidate);
       const addedCandidate = await electionService.addCandidate(newCandidate);
+      console.log("Response:", addedCandidate);
       setCandidates(prev => [...prev, addedCandidate]);
       setNewCandidate({ name: '', university: '', position: '', bio: '' });
       toast.success("Candidate added successfully");
+      
+      // Refresh vote data to include the new candidate
+      const data = await electionService.getElectionData();
+      setVoteData(data.votes || {});
     } catch (error) {
       console.error('Failed to add candidate:', error);
+      toast.error("Failed to add candidate. Please try again.");
     }
   };
 
@@ -255,13 +306,27 @@ const Admin = () => {
                     
                     <div className="space-y-2">
                       <Label htmlFor="university">University</Label>
-                      <Input 
-                        id="university" 
-                        placeholder="Enter university name" 
+                      <Select 
                         value={newCandidate.university}
-                        onChange={handleCandidateInputChange}
-                        required
-                      />
+                        onValueChange={handleUniversityChange}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select a university" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectLabel>Universities</SelectLabel>
+                            {UNIVERSITIES.map((university) => (
+                              <SelectItem 
+                                key={university.id} 
+                                value={university.name}
+                              >
+                                {university.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   
@@ -331,7 +396,18 @@ const Admin = () => {
                         candidates.map(candidate => (
                           <tr key={candidate.id}>
                             <td className="px-6 py-4 whitespace-nowrap">{candidate.name}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">{candidate.university}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                {getUniversityLogo(candidate.university) && (
+                                  <img 
+                                    src={getUniversityLogo(candidate.university)} 
+                                    alt={candidate.university}
+                                    className="w-6 h-6 object-contain"
+                                  />
+                                )}
+                                {candidate.university}
+                              </div>
+                            </td>
                             <td className="px-6 py-4 whitespace-nowrap">{candidate.position}</td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <Button 
@@ -425,129 +501,87 @@ const Admin = () => {
           
           <TabsContent value="results">
             <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="flex justify-between items-center">
-                  <span>Election Results</span>
-                  <div className="flex items-center gap-2">
-                    <div className={`h-2 w-2 rounded-full ${isPolling ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={togglePolling}
-                    >
-                      {isPolling ? 'Pause Updates' : 'Resume Updates'}
-                    </Button>
-                  </div>
-                </CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Election Results</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {voteStats.votesCast} votes cast out of {voteStats.totalVoters} registered voters
+                    ({voteStats.turnoutPercentage}% turnout)
+                  </p>
+                </div>
+                <div>
+                  <Button onClick={togglePolling} variant="outline">
+                    {isPolling ? "Pause Updates" : "Resume Updates"}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-6">
-                  <div className="p-6 bg-black/20 backdrop-blur-md rounded-lg border border-white/10">
-                    <h3 className="text-lg font-medium mb-4">Current Status: Election in Progress</h3>
-                    <p className="text-gray-400 mb-4">
-                      {isPolling 
-                        ? `Live results updating - Last update: ${voteStats.lastUpdated.toLocaleTimeString()}` 
-                        : 'Results updates paused'}
-                    </p>
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-sm text-gray-500">
-                          Start Date: {new Date(electionSettings.startDate).toLocaleDateString('en-US', { 
-                            year: 'numeric', 
-                            month: 'long', 
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          End Date: {new Date(electionSettings.endDate).toLocaleDateString('en-US', { 
-                            year: 'numeric', 
-                            month: 'long', 
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button 
-                          onClick={handleSimulateVote} 
-                          className="bg-gradient-blockchain hover:shadow-lg hover:shadow-voting-blue/25"
-                          disabled={candidates.length === 0}
-                        >
-                          Simulate Vote
-                        </Button>
-                        <Button 
-                          onClick={() => setShowChart(!showChart)} 
-                          className="bg-gradient-blockchain hover:shadow-lg hover:shadow-voting-blue/25" 
-                          disabled={candidates.length === 0}
-                        >
-                          {showChart ? "Hide Results" : "View Results"}
-                        </Button>
+                {resultsData.length === 0 ? (
+                  <div className="text-center p-4">
+                    <p>No candidates available to display results.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="h-[300px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={resultsData} margin={{ top: 20, right: 30, left: 20, bottom: 50 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="name" 
+                            angle={-45} 
+                            textAnchor="end"
+                            height={80}
+                            tick={{ fontSize: 12 }}
+                          />
+                          <YAxis />
+                          <Tooltip 
+                            content={({ active, payload }) => {
+                              if (active && payload && payload.length) {
+                                const candidate = payload[0].payload;
+                                return (
+                                  <div className="bg-background border rounded p-2 shadow-md">
+                                    <p className="font-bold">{candidate.name}</p>
+                                    <p className="text-sm">{candidate.university}</p>
+                                    <p className="font-semibold">Votes: {candidate.votes}</p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                          <Legend />
+                          <Bar dataKey="votes" name="Votes" fill="#0EA5E9" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="mt-6">
+                      <h3 className="font-medium mb-2">Vote Breakdown:</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {resultsData.map((candidate, index) => (
+                          <div key={index} className="flex items-center space-x-2 p-2 border rounded">
+                            <div className="h-4 w-4" style={{ backgroundColor: candidate.fill }}></div>
+                            <div className="flex-1">
+                              <div className="font-medium">{candidate.name}</div>
+                              <div className="text-sm text-muted-foreground flex items-center gap-2">
+                                {getUniversityLogo(candidate.university) && (
+                                  <img 
+                                    src={getUniversityLogo(candidate.university)} 
+                                    alt={candidate.university}
+                                    className="w-4 h-4 object-contain"
+                                  />
+                                )}
+                                {candidate.university}
+                              </div>
+                            </div>
+                            <div className="font-bold">{candidate.votes} votes</div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-lg font-medium mb-4">Live Voting Statistics</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <Card className="p-4 text-center glass-card">
-                        <h4 className="text-gray-400 mb-2">Total Registered Voters</h4>
-                        <p className="text-3xl font-bold gradient-text">{voteStats.totalVoters.toLocaleString()}</p>
-                      </Card>
-                      
-                      <Card className="p-4 text-center glass-card relative overflow-hidden">
-                        <div className={`absolute inset-0 bg-voting-blue/5 transition-transform duration-500 ${isPolling ? 'animate-pulse' : ''}`}></div>
-                        <h4 className="text-gray-400 mb-2 relative z-10">Votes Cast</h4>
-                        <p className="text-3xl font-bold gradient-text relative z-10">{voteStats.votesCast.toLocaleString()}</p>
-                      </Card>
-                      
-                      <Card className="p-4 text-center glass-card">
-                        <h4 className="text-gray-400 mb-2">Voter Turnout</h4>
-                        <p className="text-3xl font-bold gradient-text">{voteStats.turnoutPercentage}%</p>
-                      </Card>
-                    </div>
-                  </div>
-                  
-                  {showChart && candidates.length > 0 && <div className="mt-8 p-6 bg-black/20 backdrop-blur-md rounded-lg border border-white/10 mx-0">
-                      <h3 className="text-lg font-medium mb-6">Election Results Visualization</h3>
-                      <div className="h-96 w-full">
-                        <ChartContainer config={chartConfig} className="h-full">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={resultsData} margin={{
-                          top: 20,
-                          right: 30,
-                          left: 20,
-                          bottom: 70
-                        }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                              <XAxis dataKey="name" angle={-45} textAnchor="end" height={70} tick={{
-                            fill: 'var(--foreground)'
-                          }} />
-                              <YAxis tick={{
-                            fill: 'var(--foreground)'
-                          }} />
-                              <Tooltip content={<ChartTooltipContent formatter={(value, name, props) => {
-                            return <div className="flex items-center gap-2">
-                                          <span className="font-mono font-medium">{value} votes</span>
-                                          <span className="text-xs text-gray-400">({props.payload.university})</span>
-                                        </div>;
-                          }} />} />
-                              <Legend wrapperStyle={{
-                            position: 'relative',
-                            marginTop: '10px'
-                          }} />
-                              <Bar dataKey="votes" name="Votes" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </ChartContainer>
-                        <div className="mt-4 text-center text-xs text-gray-400 my-0">
-                          <p>Data secured and verified on Ethereum blockchain</p>
-                          <p className="eth-tx-hash mt-2 my-0">0xfe3a82d9bc997b59fa3cb648c905b3c3c37a52d0fe7bd69e3c9b6f576602bdc1</p>
-                        </div>
-                      </div>
-                    </div>}
+                  </>
+                )}
+                <div className="mt-4 text-sm text-muted-foreground text-right">
+                  Last updated: {voteStats.lastUpdated.toLocaleTimeString()}
                 </div>
               </CardContent>
             </Card>
