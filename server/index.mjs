@@ -100,11 +100,108 @@ async function connectToDatabase() {
       ]);
     }
     
+    // Run initial data consistency check
+    await ensureDataConsistency();
+    
+    // Set up periodic data consistency checks (every 5 minutes)
+    setInterval(ensureDataConsistency, 5 * 60 * 1000);
+    
   } catch (error) {
     console.error('MongoDB connection error:', error);
     // Don't exit the process, try to keep the server running
     // but mark as not connected
     isConnected = false;
+  }
+}
+
+// Ensure data consistency across collections
+async function ensureDataConsistency() {
+  try {
+    if (!isConnected || !db) {
+      console.log('Database not connected, skipping data consistency check');
+      return;
+    }
+    
+    console.log('Running data consistency check...');
+    
+    // 1. Get all candidates
+    const candidates = await db.collection('candidates').find({}).toArray();
+    console.log(`Found ${candidates.length} candidates`);
+    
+    // 2. Get all vote records
+    const voteRecords = await db.collection('votes').find({}).toArray();
+    console.log(`Found ${voteRecords.length} vote records`);
+    
+    // Create a map of existing vote records
+    const voteMap = voteRecords.reduce((map, vote) => {
+      if (vote.candidateId) {
+        map[vote.candidateId.toString()] = vote;
+      }
+      return map;
+    }, {});
+    
+    // 3. Check for missing or invalid vote records
+    let fixedRecords = 0;
+    
+    // Ensure each candidate has a vote record
+    for (const candidate of candidates) {
+      const candidateId = candidate._id.toString();
+      
+      // If no vote record exists for this candidate, create one
+      if (!voteMap[candidateId]) {
+        await db.collection('votes').insertOne({
+          candidateId,
+          count: 0
+        });
+        fixedRecords++;
+        console.log(`Created missing vote record for candidate: ${candidate.name} (${candidateId})`);
+      }
+      // If vote record exists but has invalid count, fix it
+      else if (voteMap[candidateId].count === undefined || 
+               voteMap[candidateId].count === null || 
+               isNaN(voteMap[candidateId].count)) {
+        await db.collection('votes').updateOne(
+          { candidateId },
+          { $set: { count: 0 } }
+        );
+        fixedRecords++;
+        console.log(`Fixed invalid vote count for candidate: ${candidate.name} (${candidateId})`);
+      }
+    }
+    
+    // 4. Check for orphaned vote records (no corresponding candidate)
+    let orphanedRecords = 0;
+    const candidateIdSet = new Set(candidates.map(c => c._id.toString()));
+    
+    for (const vote of voteRecords) {
+      // Skip if candidateId is missing
+      if (!vote.candidateId) continue;
+      
+      const voteForId = vote.candidateId.toString();
+      if (!candidateIdSet.has(voteForId)) {
+        // This vote record is for a candidate that no longer exists
+        await db.collection('votes').deleteOne({ _id: vote._id });
+        orphanedRecords++;
+        console.log(`Removed orphaned vote record for non-existent candidate ID: ${voteForId}`);
+      }
+    }
+    
+    // 5. Ensure voter stats exist
+    const voterStats = await db.collection('voters').findOne({ _id: 'stats' });
+    if (!voterStats) {
+      await db.collection('voters').insertOne({
+        _id: 'stats',
+        totalRegistered: 2548,
+        lastUpdated: new Date()
+      });
+      fixedRecords++;
+      console.log('Created missing voter statistics record');
+    }
+    
+    console.log(`Data consistency check completed. Fixed ${fixedRecords} records, removed ${orphanedRecords} orphaned records.`);
+    
+  } catch (error) {
+    console.error('Error during data consistency check:', error);
   }
 }
 
@@ -188,7 +285,11 @@ app.get('/api/election', async (req, res) => {
     
     // Create a map of candidateId to vote count
     const voteMap = voteRecords.reduce((map, vote) => {
-      map[vote.candidateId] = vote.count || 0;
+      // Ensure we're using string IDs consistently
+      const candidateId = vote.candidateId?.toString();
+      if (candidateId) {
+        map[candidateId] = vote.count || 0;
+      }
       return map;
     }, {});
     
@@ -196,6 +297,19 @@ app.get('/api/election', async (req, res) => {
     for (const candidate of candidates) {
       const candidateId = candidate._id.toString();
       votes[candidateId] = voteMap[candidateId] || 0;
+      
+      // If no vote record exists yet for this candidate, create one
+      if (!voteMap[candidateId]) {
+        try {
+          await db.collection('votes').insertOne({
+            candidateId,
+            count: 0
+          });
+          console.log(`Created missing vote record for candidate: ${candidate.name} (${candidateId})`);
+        } catch (voteError) {
+          console.error(`Error creating vote record for candidate ${candidateId}:`, voteError);
+        }
+      }
     }
     
     console.log('Vote counts:', votes);
@@ -241,7 +355,35 @@ app.get('/api/election', async (req, res) => {
 // Get candidates
 app.get('/api/candidates', async (req, res) => {
   try {
+    console.log('Fetching all candidates');
     const candidates = await db.collection('candidates').find({}).toArray();
+    
+    // Check for missing vote records and create them
+    const voteRecords = await db.collection('votes').find({}).toArray();
+    const voteMap = voteRecords.reduce((map, vote) => {
+      if (vote.candidateId) {
+        map[vote.candidateId.toString()] = true;
+      }
+      return map;
+    }, {});
+    
+    // Ensure each candidate has a vote record
+    for (const candidate of candidates) {
+      const candidateId = candidate._id.toString();
+      
+      if (!voteMap[candidateId]) {
+        try {
+          await db.collection('votes').insertOne({
+            candidateId,
+            count: 0
+          });
+          console.log(`Created missing vote record for candidate: ${candidate.name} (${candidateId})`);
+        } catch (voteError) {
+          console.error(`Error creating vote record for candidate ${candidateId}:`, voteError);
+        }
+      }
+    }
+    
     // Transform MongoDB _id to id for client
     const transformedCandidates = candidates.map(c => ({
       id: c._id.toString(),
@@ -250,6 +392,8 @@ app.get('/api/candidates', async (req, res) => {
       position: c.position,
       bio: c.bio
     }));
+    
+    console.log(`Returning ${transformedCandidates.length} candidates`);
     res.json(transformedCandidates);
   } catch (error) {
     console.error('Error fetching candidates:', error);
@@ -502,28 +646,28 @@ app.post('/api/vote', async (req, res) => {
     
     console.log(`Found candidate: ${candidate.name}`);
     
-    // Find or create vote record
-    const voteRecord = await db.collection('votes').findOne({ candidateId });
+    // Find or create vote record - ensure we're using string IDs consistently
+    const voteRecord = await db.collection('votes').findOne({ candidateId: candidateId.toString() });
     
     let result;
     if (voteRecord) {
       console.log(`Updating existing vote record for ${candidateId}, current count: ${voteRecord.count}`);
       result = await db.collection('votes').updateOne(
-        { candidateId },
+        { candidateId: candidateId.toString() },
         { $inc: { count: 1 } }
       );
       console.log(`Vote record updated: ${result.modifiedCount} document modified`);
     } else {
       console.log(`Creating new vote record for ${candidateId}`);
       result = await db.collection('votes').insertOne({
-        candidateId,
+        candidateId: candidateId.toString(),
         count: 1
       });
       console.log(`Vote record created with ID: ${result.insertedId}`);
     }
     
     // Get updated vote count
-    const updatedVoteRecord = await db.collection('votes').findOne({ candidateId });
+    const updatedVoteRecord = await db.collection('votes').findOne({ candidateId: candidateId.toString() });
     const newCount = updatedVoteRecord ? updatedVoteRecord.count : 1;
     
     console.log(`New vote count for ${candidate.name}: ${newCount}`);
@@ -532,9 +676,20 @@ app.post('/api/vote', async (req, res) => {
     const allVotes = await db.collection('votes').find({}).toArray();
     const voteMap = {};
     
-    // Build vote map
+    // Build vote map - ensure we're using string IDs consistently
     for (const vote of allVotes) {
-      voteMap[vote.candidateId] = vote.count || 0;
+      if (vote.candidateId) {
+        voteMap[vote.candidateId.toString()] = vote.count || 0;
+      }
+    }
+    
+    // Get all candidates to ensure every candidate has a vote entry
+    const allCandidates = await db.collection('candidates').find({}).toArray();
+    for (const candidate of allCandidates) {
+      const id = candidate._id.toString();
+      if (!voteMap[id]) {
+        voteMap[id] = 0;
+      }
     }
     
     // Get vote statistics
@@ -548,10 +703,16 @@ app.post('/api/vote', async (req, res) => {
     
     console.log(`Returning updated vote data: ${totalVotesCast} total votes (${turnoutPercentage}% turnout)`);
     
+    // Update voter stats record with new total
+    await db.collection('voters').updateOne(
+      { _id: 'stats' },
+      { $set: { lastUpdated: new Date() } }
+    );
+    
     res.json({ 
       success: true, 
       candidate: {
-        id: candidateId,
+        id: candidateId.toString(),
         name: candidate.name
       },
       newCount,
@@ -578,18 +739,45 @@ app.get('/api/stats', async (req, res) => {
     
     // Get all vote counts
     const votes = await db.collection('votes').find({}).toArray();
-    const totalVotesCast = votes.reduce((sum, vote) => sum + vote.count, 0);
+    
+    // Validate all votes have proper counts
+    let needsRepair = false;
+    for (const vote of votes) {
+      if (vote.count === undefined || vote.count === null || isNaN(vote.count)) {
+        // Fix corrupted vote records
+        await db.collection('votes').updateOne(
+          { _id: vote._id },
+          { $set: { count: 0 } }
+        );
+        needsRepair = true;
+        console.log(`Repaired corrupted vote record for candidate ID: ${vote.candidateId}`);
+      }
+    }
+    
+    // If records were repaired, get fresh data
+    const validVotes = needsRepair 
+      ? await db.collection('votes').find({}).toArray()
+      : votes;
+    
+    const totalVotesCast = validVotes.reduce((sum, vote) => sum + (vote.count || 0), 0);
     
     // Calculate turnout
     const turnoutPercentage = totalVoters > 0 
       ? parseFloat(((totalVotesCast / totalVoters) * 100).toFixed(1)) 
       : 0;
     
+    // Update last updated timestamp
+    const now = new Date();
+    await db.collection('voters').updateOne(
+      { _id: 'stats' },
+      { $set: { lastUpdated: now } }
+    );
+    
     res.json({
       totalVoters,
       votesCast: totalVotesCast,
       turnoutPercentage,
-      lastUpdated: new Date()
+      lastUpdated: now
     });
   } catch (error) {
     console.error('Error fetching vote statistics:', error);
