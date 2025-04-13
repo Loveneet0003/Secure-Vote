@@ -24,14 +24,46 @@ export interface VoteStatistics {
 }
 
 // Replace with your actual Render deployment URL
-const API_URL = import.meta.env.VITE_RENDER_API_URL || 'http://localhost:3001/api';
+const API_URL = import.meta.env.VITE_RENDER_API_URL || 'http://localhost:3001';
 
-// Make sure API_URL ends with /api
+console.log("Environment API URL:", import.meta.env.VITE_RENDER_API_URL);
+console.log("Using base API URL:", API_URL);
+
+// Make sure API_URL is properly formatted for API calls
 const getApiBaseUrl = () => {
-  const url = API_URL.endsWith('/api') ? API_URL : `${API_URL}/api`;
-  console.log("Using API base URL:", url);
+  // Remove trailing slash if present
+  const baseUrl = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+  
+  // Add /api if not already present in the path
+  // But avoid adding it twice if it's already there at the end
+  const url = baseUrl.endsWith('/api') ? baseUrl : `${baseUrl}/api`;
+  
+  console.log("Final API base URL:", url);
   return url;
 };
+
+// Check if API is accessible
+// Log the URL being accessed
+window.setTimeout(() => {
+  try {
+    const testUrl = `${getApiBaseUrl()}/health`;
+    console.log("Checking API health at:", testUrl);
+    fetch(testUrl)
+      .then(response => {
+        console.log("API health check response:", response.status, response.statusText);
+        if (!response.ok) {
+          console.error("API health check failed: API might be down or misconfigured");
+        } else {
+          console.log("API health check successful");
+        }
+      })
+      .catch(err => {
+        console.error("API health check error:", err);
+      });
+  } catch (error) {
+    console.error("Error during API health check setup:", error);
+  }
+}, 1000);
 
 // Helper function for API calls
 const apiCall = async (endpoint: string, options = {}) => {
@@ -164,10 +196,80 @@ export const electionService = {
   
   // Add a candidate
   addCandidate: async (candidate: Omit<Candidate, 'id'>): Promise<Candidate> => {
-    return apiCall('/candidates', {
-      method: 'POST',
-      body: JSON.stringify(candidate),
-    });
+    console.log("Adding candidate:", candidate);
+    
+    try {
+      // Validate candidate data before sending
+      if (!candidate.name || !candidate.university || !candidate.position) {
+        const error = new Error("Candidate data is incomplete. Name, university, and position are required.");
+        console.error("Validation error:", error);
+        toast.error(error.message);
+        throw error;
+      }
+      
+      // Make a direct fetch instead of using apiCall for more control
+      const baseUrl = getApiBaseUrl();
+      const url = `${baseUrl}/candidates`;
+      console.log("POST request to:", url);
+      console.log("With payload:", candidate);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // Longer timeout for adding
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(candidate),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      console.log("Add candidate response status:", response.status, response.statusText);
+      
+      if (!response.ok) {
+        let errorMessage = `Failed to add candidate: ${response.status} ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          console.error("Error response data:", errorData);
+          errorMessage = errorData.message || errorData.error || errorMessage;
+        } catch (e) {
+          console.error("Could not parse error response", e);
+          try {
+            const text = await response.text();
+            console.error("Error response text:", text);
+            errorMessage = `${errorMessage} - ${text}`;
+          } catch (e2) {
+            console.error("Could not get error text", e2);
+          }
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
+      const data = await response.json();
+      console.log("Add candidate success:", data);
+      return data;
+    } catch (error: any) {
+      // Check for network errors
+      if (error.name === 'AbortError') {
+        console.error("Add candidate timeout");
+        toast.error("Request timed out when adding candidate");
+        throw new Error("Request timed out when adding candidate");
+      }
+      
+      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+        console.error("Network error when adding candidate:", error);
+        toast.error("Network error: Could not connect to server");
+        throw new Error("Network error: Could not connect to server");
+      }
+      
+      console.error("Error adding candidate:", error);
+      toast.error(error.message || "Failed to add candidate");
+      throw error;
+    }
   },
   
   // Update a candidate

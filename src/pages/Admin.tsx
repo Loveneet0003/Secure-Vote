@@ -181,13 +181,33 @@ const Admin = () => {
     }
     
     try {
+      // Clear previous errors
+      toast.dismiss();
+      
+      // Show loading indicator
+      const loadingToast = toast.loading("Adding candidate...");
+      
       console.log("Sending candidate data:", newCandidate);
       
-      // Verbose logging of the request
-      toast.info("Submitting candidate data...");
+      // Check API connection first
+      try {
+        const connectionTest = await electionService.testConnection();
+        if (!connectionTest.success) {
+          toast.dismiss(loadingToast);
+          toast.error("API connection failed. Cannot add candidate.");
+          return;
+        }
+      } catch (connectionError) {
+        console.error("Connection test error:", connectionError);
+        toast.dismiss(loadingToast);
+        toast.error("Failed to verify API connection. Server may be down.");
+        return;
+      }
       
       const addedCandidate = await electionService.addCandidate(newCandidate);
       
+      // Success - update UI
+      toast.dismiss(loadingToast);
       console.log("Response:", addedCandidate);
       setCandidates(prev => [...prev, addedCandidate]);
       setNewCandidate({ name: '', university: '', position: '', bio: '' });
@@ -198,8 +218,21 @@ const Admin = () => {
       setVoteData(data.votes || {});
     } catch (error: any) {
       console.error('Failed to add candidate:', error);
-      // More detailed error message
-      const errorMessage = error.message || "Unknown error occurred";
+      
+      // Handle specific error types
+      let errorMessage = error.message || "Unknown error occurred";
+      
+      // Check for 404 Not Found errors specifically
+      if (errorMessage.includes("404")) {
+        errorMessage = "API endpoint not found (404). Check server configuration and API URL.";
+      }
+      
+      // Check for network errors
+      if (error.name === 'TypeError' && errorMessage.includes('fetch')) {
+        errorMessage = "Network error: Cannot connect to server. Check if API is running.";
+      }
+      
+      // Display error message
       toast.error(`Failed to add candidate: ${errorMessage}`);
       
       // Display stack trace in console for debugging
