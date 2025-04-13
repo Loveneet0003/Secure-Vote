@@ -257,6 +257,46 @@ app.get('/api/candidates', async (req, res) => {
   }
 });
 
+// Get candidates filtered by university
+app.get('/api/candidates/university/:university', async (req, res) => {
+  try {
+    const { university } = req.params;
+    console.log(`Fetching candidates for university: ${university}`);
+    
+    // Validate university parameter
+    if (!university) {
+      return res.status(400).json({ 
+        error: 'Missing university parameter', 
+        message: 'University parameter is required' 
+      });
+    }
+    
+    // Find candidates for this university
+    const candidates = await db.collection('candidates')
+      .find({ university: { $regex: new RegExp(university, 'i') } })
+      .toArray();
+    
+    console.log(`Found ${candidates.length} candidates for university: ${university}`);
+    
+    // Transform MongoDB _id to id for client
+    const transformedCandidates = candidates.map(c => ({
+      id: c._id.toString(),
+      name: c.name,
+      university: c.university,
+      position: c.position,
+      bio: c.bio
+    }));
+    
+    res.json(transformedCandidates);
+  } catch (error) {
+    console.error('Error fetching candidates by university:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch candidates', 
+      message: error.message 
+    });
+  }
+});
+
 // Add a candidate
 app.post('/api/candidates', async (req, res) => {
   try {
@@ -433,7 +473,10 @@ app.post('/api/vote', async (req, res) => {
     
     if (!candidateId) {
       console.error('Missing candidateId in request body');
-      return res.status(400).json({ error: 'Missing candidateId', message: 'Candidate ID is required' });
+      return res.status(400).json({ 
+        error: 'Missing candidateId', 
+        message: 'Candidate ID is required' 
+      });
     }
     
     // Check if candidate exists
@@ -442,13 +485,19 @@ app.post('/api/vote', async (req, res) => {
       objectId = new ObjectId(candidateId);
     } catch (error) {
       console.error('Invalid candidate ID format:', candidateId);
-      return res.status(400).json({ error: 'Invalid candidate ID format', message: error.message });
+      return res.status(400).json({ 
+        error: 'Invalid candidate ID format', 
+        message: error.message 
+      });
     }
     
     const candidate = await db.collection('candidates').findOne({ _id: objectId });
     if (!candidate) {
       console.error('Candidate not found with ID:', candidateId);
-      return res.status(404).json({ error: 'Candidate not found', message: 'No candidate exists with the provided ID' });
+      return res.status(404).json({ 
+        error: 'Candidate not found', 
+        message: 'No candidate exists with the provided ID' 
+      });
     }
     
     console.log(`Found candidate: ${candidate.name}`);
@@ -479,13 +528,40 @@ app.post('/api/vote', async (req, res) => {
     
     console.log(`New vote count for ${candidate.name}: ${newCount}`);
     
+    // Get all current votes to return them
+    const allVotes = await db.collection('votes').find({}).toArray();
+    const voteMap = {};
+    
+    // Build vote map
+    for (const vote of allVotes) {
+      voteMap[vote.candidateId] = vote.count || 0;
+    }
+    
+    // Get vote statistics
+    const voterStats = await db.collection('voters').findOne({ _id: 'stats' });
+    const totalVoters = voterStats ? voterStats.totalRegistered : 0;
+    
+    const totalVotesCast = Object.values(voteMap).reduce((sum, count) => sum + count, 0);
+    const turnoutPercentage = totalVoters > 0 
+      ? parseFloat(((totalVotesCast / totalVoters) * 100).toFixed(1)) 
+      : 0;
+    
+    console.log(`Returning updated vote data: ${totalVotesCast} total votes (${turnoutPercentage}% turnout)`);
+    
     res.json({ 
       success: true, 
       candidate: {
         id: candidateId,
         name: candidate.name
       },
-      newCount
+      newCount,
+      votes: voteMap,
+      stats: {
+        totalVoters,
+        votesCast: totalVotesCast,
+        turnoutPercentage,
+        lastUpdated: new Date()
+      }
     });
   } catch (error) {
     console.error('Error casting vote:', error);
