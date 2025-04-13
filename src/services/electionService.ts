@@ -191,7 +191,44 @@ export const electionService = {
   
   // Get candidates by university
   getCandidatesByUniversity: async (university: string): Promise<Candidate[]> => {
-    return apiCall(`/candidates/university/${encodeURIComponent(university)}`);
+    console.log(`Getting candidates for ${university} using client-side filtering`);
+    
+    try {
+      // Instead of requesting a non-existent endpoint, fetch all candidates
+      // and filter them on the client side
+      const allCandidates = await apiCall('/candidates');
+      console.log(`Fetched ${allCandidates.length} total candidates`);
+      
+      // Filter by university name
+      const filteredCandidates = allCandidates.filter(
+        candidate => candidate.university === university
+      );
+      
+      console.log(`Found ${filteredCandidates.length} candidates for ${university}`);
+      return filteredCandidates;
+    } catch (error) {
+      console.error(`Error fetching candidates for ${university}:`, error);
+      
+      // Fallback to election data if candidates endpoint fails
+      try {
+        console.log("Falling back to election data endpoint");
+        const electionData = await apiCall('/election');
+        
+        if (electionData && electionData.candidates) {
+          const filteredCandidates = electionData.candidates.filter(
+            (candidate: Candidate) => candidate.university === university
+          );
+          
+          console.log(`Found ${filteredCandidates.length} candidates from election data`);
+          return filteredCandidates;
+        }
+      } catch (fallbackError) {
+        console.error("Fallback also failed:", fallbackError);
+      }
+      
+      // If all attempts fail, rethrow the original error
+      throw error;
+    }
   },
   
   // Add a candidate
