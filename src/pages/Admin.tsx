@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import ApiTest from '@/components/ApiTest';
 
 // List of universities based on the logos folder
 const UNIVERSITIES = [
@@ -287,6 +288,8 @@ const Admin = () => {
   return <Layout>
       <div className="container mx-auto px-4 py-12">
         <h1 className="text-3xl font-bold mb-8 text-center gradient-text">Admin Dashboard</h1>
+        
+        <ApiTest />
         
         <Tabs defaultValue="candidates" className="w-full">
           <TabsList className="grid w-full grid-cols-3 mb-8">

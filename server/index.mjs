@@ -109,12 +109,32 @@ async function connectToDatabase() {
 }
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: '*', // Allow all origins
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
+
+// Log all requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} [${req.method}] ${req.originalUrl}`);
+  next();
+});
+
+// Root endpoint for health checks
+app.get('/', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    message: 'Secure Vote API is running',
+    version: '1.0.0',
+    endpoints: '/api/*' 
+  });
+});
 
 // Add middleware to check DB connection
 app.use((req, res, next) => {
-  if (!isConnected && req.path !== '/api/health') {
+  if (!isConnected && req.path !== '/api/health' && req.path !== '/api') {
     console.error('Database not connected, rejecting request to', req.path);
     return res.status(503).json({ 
       error: 'Service Unavailable', 
@@ -125,11 +145,31 @@ app.use((req, res, next) => {
 });
 
 // Routes
+app.get('/api', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    message: 'API is ready',
+    endpoints: [
+      '/api/health',
+      '/api/election',
+      '/api/candidates',
+      '/api/vote',
+      '/api/stats',
+      '/api/settings'
+    ] 
+  });
+});
+
 app.get('/api/health', (req, res) => {
-  if (!db) {
-    return res.status(500).json({ status: 'ERROR', message: 'Database not connected' });
-  }
-  res.status(200).json({ status: 'OK', message: 'Server is running' });
+  const dbStatus = isConnected ? 'connected' : 'disconnected';
+  console.log(`Health check: Database ${dbStatus}`);
+  
+  res.status(200).json({ 
+    status: 'OK', 
+    message: 'Server is running', 
+    database: dbStatus,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Get all election data

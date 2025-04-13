@@ -26,17 +26,30 @@ export interface VoteStatistics {
 // Replace with your actual Render deployment URL
 const API_URL = import.meta.env.VITE_RENDER_API_URL || 'http://localhost:3001/api';
 
-console.log("API URL configured as:", API_URL);
+// Make sure API_URL ends with /api
+const getApiBaseUrl = () => {
+  const url = API_URL.endsWith('/api') ? API_URL : `${API_URL}/api`;
+  console.log("Using API base URL:", url);
+  return url;
+};
 
 // Helper function for API calls
 const apiCall = async (endpoint: string, options = {}) => {
-  const url = `${API_URL}${endpoint}`;
+  const baseUrl = getApiBaseUrl();
+  // Make sure endpoint starts with / if needed
+  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = `${baseUrl}${path}`;
+  
   console.log(`Making API call to ${url}`, options);
   
   try {
     // Add a timeout to the fetch to prevent hanging requests
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
+    // Add some extra debugging data
+    console.log('Current page URL:', window.location.href);
+    console.log('VITE_RENDER_API_URL env value:', import.meta.env.VITE_RENDER_API_URL);
     
     const response = await fetch(url, {
       headers: {
@@ -99,6 +112,41 @@ const apiCall = async (endpoint: string, options = {}) => {
 
 // Election service
 export const electionService = {
+  // Test API connection
+  testConnection: async () => {
+    try {
+      console.log("Testing API connection...");
+      const baseUrl = getApiBaseUrl();
+      const healthEndpoint = baseUrl.endsWith('/api') ? `${baseUrl}/health` : `${baseUrl}/api/health`;
+      
+      console.log(`Trying health check at: ${healthEndpoint}`);
+      
+      // Try with no timeout first
+      const response = await fetch(healthEndpoint, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Connection test successful:", data);
+        toast.success("API connection successful!");
+        return { success: true, data };
+      } else {
+        const errorText = await response.text();
+        console.error("Connection test failed:", response.status, errorText);
+        toast.error(`API connection failed: ${response.status} ${response.statusText}`);
+        return { success: false, error: `${response.status} ${response.statusText}` };
+      }
+    } catch (error) {
+      console.error("Connection test error:", error);
+      toast.error(`API connection error: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  },
+
   // Get all election data in one call
   getElectionData: async () => {
     return apiCall('/election');
